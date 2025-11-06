@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Shop Long - Ecommerce</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    body { background: #f8f9fa; }
+    .card-img-top { height: 200px; object-fit: cover; }
+    .admin-only { display: none; }
+  </style>
+</head>
+<body>
+<div id="app" class="container py-4"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const API = '/nodered/api';
+let user = null;
+let cart = JSON.parse(localStorage.getItem('cart') || '[]');
+
+function render() {
+  const app = document.getElementById('app');
+  if (!user) {
+    app.innerHTML = `
+      <div class="card mx-auto" style="max-width: 400px;">
+        <div class="card-body">
+          <h3 class="card-title">Đăng Nhập</h3>
+          <input id="username" class="form-control mb-2" placeholder="Tên đăng nhập">
+          <input id="password" type="password" class="form-control mb-2" placeholder="Mật khẩu">
+          <button class="btn btn-primary w-100" onclick="login()">Đăng Nhập</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  app.innerHTML = `
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+      <div class="container-fluid">
+        <a class="navbar-brand">Shop Long</a>
+        <div>
+          <span class="navbar-text me-3">Xin chào, <b>${user.username}</b></span>
+          <button class="btn btn-outline-light me-2" onclick="showAdmin()">Admin</button>
+          <button class="btn btn-outline-light" onclick="logout()">Đăng xuất</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="row" id="content"></div>
+    <div class="mt-4 text-center">
+      <button class="btn btn-success" onclick="checkout()">Thanh Toán (${cart.reduce((s,i)=>s+i.qty,0)})</button>
+    </div>`;
+  loadProducts();
+}
+
+async function call(endpoint, data) {
+  const res = await fetch(API + endpoint, {
+    method: data ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: data ? JSON.stringify(data) : null
+  });
+  return res.json();
+}
+
+async function login() {
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const res = await call('/login', { username, password });
+  if (res.success) {
+    user = res.user;
+    localStorage.setItem('session', res.session);
+    render();
+  } else {
+    alert('Sai tài khoản hoặc mật khẩu!');
+  }
+}
+
+function logout() {
+  user = null;
+  localStorage.removeItem('session');
+  render();
+}
+
+async function loadProducts() {
+  const res = await call('/products');
+  const content = document.getElementById('content');
+  content.innerHTML = res.map(p => `
+    <div class="col-md-4 mb-4">
+      <div class="card h-100">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">${p.name}</h5>
+          <p class="card-text">${p.price.toLocaleString()}₫</p>
+          <button class="btn btn-primary mt-auto" onclick="addToCart(${p.id})">Thêm vào giỏ</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function addToCart(id) {
+  const item = cart.find(i => i.id === id);
+  if (item) item.qty++; else cart.push({ id, qty: 1 });
+  localStorage.setItem('cart', JSON.stringify(cart));
+  alert('Đã thêm vào giỏ!');
+}
+
+async function checkout() {
+  if (cart.length === 0) return alert('Giỏ hàng trống!');
+  const res = await call('/order', { items: cart });
+  if (res.success) {
+    alert('Đặt hàng thành công! Mã đơn: ' + res.orderId);
+    cart = [];
+    localStorage.setItem('cart', '[]');
+  }
+}
+
+async function showAdmin() {
+  if (user.role !== 'admin') return alert('Chỉ admin!');
+  const res = await call('/admin/stats');
+  document.getElementByit('content').innerHTML = `
+    <div class="col-12">
+      <h3>Thống kê đơn hàng</h3>
+      <iframe src="/grafana/d/sales/sales-dashboard?orgId=1&refresh=5m" width="100%" height="600"></iframe>
+    </div>`;
+}
+
+render();
+</script>
+</body>
+</html>
